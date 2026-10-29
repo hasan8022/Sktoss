@@ -1,0 +1,62 @@
+name: Build SkyOS APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '*.zip'
+      - '.github/workflows/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract SkyOS project
+        run: |
+          mkdir -p unpacked
+          find . -maxdepth 1 -name '*.zip' -print
+          for z in ./*.zip; do
+            [ -f "$z" ] || continue
+            unzip -o "$z" -d unpacked
+          done
+          for z in $(find unpacked -name '*.zip'); do
+            unzip -o "$z" -d "$(dirname "$z")/inner"
+          done
+
+      - name: Locate Android project
+        run: |
+          FILE=$(find unpacked -name settings.gradle.kts -print -quit)
+          if [ -z "$FILE" ]; then
+            FILE=$(find unpacked -name settings.gradle -print -quit)
+          fi
+          if [ -z "$FILE" ]; then
+            echo "Android proje dosyasi bulunamadi."
+            find unpacked -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$FILE")" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        run: gradle -p "$PROJECT_DIR" assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkyOS-debug-APK
+          path: '**/build/outputs/apk/debug/*.apk'
+          if-no-files-found: error
